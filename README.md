@@ -44,20 +44,11 @@ Imagina una autopista donde la policía instala una cámara con radar: la cámar
 **Sentinel hace exactamente eso con el juego:**
 Tu computadora recibe constantemente paquetes de datos del servidor que dicen: *"El jugador X se movió a la coordenada (120, 150) y usó la habilidad Cyclone"*. Sentinel escucha esos mensajes en tu tarjeta de red, anota la hora exacta con precisión de milisegundos y calcula las velocidades reales.
 
-```
-[ GameServer Smash MU ] 
-       │ 
-       ▼ (Tramas TCP en el cable de red)
-┌──────────────────────────────────────────────┐
-│  🛡️ SMASH MU SENTINEL (Kernel Sniffer Npcap) │  ◄── Pasivo (No toca main.exe)
-└──────────────────────────────────────────────┘
-       │ 
-       ▼ 
-[ Panel Web Táctico: http://localhost:4444 ]
-  • Radar PvP en Vivo
-  • Medidor de Casillas / Segundo
-  • Cronómetro de Combos
-  • Archivo Histórico de Hackers
+```mermaid
+flowchart TD
+    GS["🌐 GameServer Smash MU<br/>(143.14.179.89)"] -->|Tramas TCP en cable / Wi-Fi| NPF["🛡️ Smash MU Sentinel<br/>(Kernel Sniffer Npcap BPF)"]
+    NPF -->|Pasivo: Cero inyección DLL / No toca memoria| WS["⚡ Servidor WebSocket Local<br/>(http://localhost:4444)"]
+    WS --> UI["🖥️ Panel Web Táctico<br/>• Radar PvP en Vivo<br/>• Medidor de Casillas / Segundo<br/>• Cronómetro de Combos<br/>• Lista Negra & Tickets GM"]
 ```
 
 ### ¿Cómo detecta el Speedhack?
@@ -82,21 +73,16 @@ En MU Season 6, **ÚNICAMENTE los Blade Knights / Blade Masters pueden hacer com
 
 ### Arquitectura del Sniffer de Kernel
 Sentinel se integra directamente con el driver del kernel de Windows **Npcap** (`wpcap.dll`) mediante la biblioteca `cap`:
-```
-Tarjeta de Red Física (Intel Ethernet I226-V / Wi-Fi 6E)
-                       │
-                       ▼
-            Driver de Kernel Npcap (BPF)
-     Filtro BPF: "tcp and host 143.14.179.89"
-                       │
-                       ▼ (Ring Buffer de 10 MB)
-             Decodificador Ethernet
-                       │
-             Decodificador IPv4
-                       │
-             Decodificador TCP (Reensamblado)
-                       │
-             Parser de Protocolo S6 (C1/C2/C3/C4)
+
+```mermaid
+flowchart TD
+    NIC["🔌 Tarjeta de Red Física<br/>(Intel Ethernet I226-V / Wi-Fi 6E)"] --> DRV["⚙️ Driver de Kernel Npcap<br/>(Filtro BPF: tcp and host 143.14.179.89)"]
+    DRV --> BUF["📦 Ring Buffer Circular (10 MB)"]
+    BUF --> ETH["Decodificador Ethernet"]
+    ETH --> IP["Decodificador IPv4"]
+    IP --> TCP["Decodificador TCP (Reensamblado de Streams)"]
+    TCP --> PARSER["🔍 Parser de Protocolo MU S6<br/>(Opcodes C1 / C2 / C3 / C4)"]
+    PARSER --> ENG["🧠 Sentinel Forensics Engine"]
 ```
 
 1. **Auto-Detección de Adaptador Activo:** Consulta la tabla de conexiones de Windows (`netstat -ano`) y busca cuál es la IP local vinculada al GameServer (`143.14.179.89`), priorizando la interfaz física Ethernet por encima de interfaces virtuales (Hyper-V, VPNs).
@@ -178,21 +164,14 @@ En Season 6, el protocolo no envía un encabezado JSON ni etiquetas de texto; lo
 
 Sentinel implementa un pipeline de cuatro pasos para descubrir y validar a quién pertenece cada paquete:
 
-```
-[ Paquete TCP entrante ]
-         │
-         ▼
-[ 1. Escáner de Cadenas ASCII ] ────► Extrae secuencias alfanuméricas [A-Za-z0-9_] (4-10 bytes)
-         │
-         ▼
-[ 2. Filtro de Palabras Reservadas ] ─► Descarta palabras del juego (MASTER, BLADE, LEVEL, GUILD...)
-         │
-         ▼
-[ 3. Enlace de Sesión (SessionKey) ] ─► Asocia el nombre a la clave única: `${clientPort}_${pId}`
-         │
-         ▼
-[ 4. Validación API Smash MU ] ──────► Consulta oficial a https://www.smashmu.com/api/
-                                       Obtiene: Clase real, Nivel, Resets y GearScore oficial
+```mermaid
+flowchart TD
+    PKT["📦 Paquete TCP Entrante"] --> SCAN["1. Escáner de Cadenas ASCII<br/>(4 a 10 letras [A-Za-z0-9_])"]
+    SCAN --> FLT{"2. ¿Es palabra reservada?<br/>(MASTER, BLADE, LEVEL, GUILD...)"}
+    FLT -- "Sí (Palabra del sistema)" --> DISC["❌ Descartar como nombre"]
+    FLT -- "No (Posible personaje)" --> MAP["3. Enlace de Sesión Local<br/>(SessionKey = clientPort_pId)"]
+    MAP --> API["4. Validación API Smash MU<br/>(https://www.smashmu.com/api/)"]
+    API --> PROF["✅ Perfil Verificado Oficial<br/>• Clase Oficial (Blade Master, etc.)<br/>• Nivel y Resets<br/>• GearScore Oficial"]
 ```
 
 1. **Escaneo de Patrones ASCII:** Detecta secuencias continuas de bytes legibles (código ASCII 48 al 57 para números, 65 al 90 para mayúsculas, 97 al 122 para minúsculas).
@@ -229,6 +208,25 @@ Cuando un personaje se desplaza, el servidor emite o recibe paquetes de movimien
 ### Fisiología y Mecánica del Auto-Combo
 En el motor Season 6, la mecánica de combo del Blade Knight está programada como una máquina de estados finitos (FSM):
 $$\text{Fase 1 (Arma)} \xrightarrow{\Delta t_1} \text{Fase 2 (Slash)} \xrightarrow{\Delta t_2} \text{Fase 3 (Stab)} \Longrightarrow \text{Combo Burst}$$
+
+```mermaid
+stateDiagram-v2
+    [*] --> Fase1: Inicia Secuencia
+    state "Fase 1: Skill de Arma" as Fase1
+    note right of Fase1: Cyclone (19), Slash (20), Lunge (22)...
+    
+    Fase1 --> Fase2: Transición (Δt1)
+    state "Fase 2: Skill de Transición" as Fase2
+    note right of Fase2: Twisting Slash (41), Rageful Blow (42)
+    
+    Fase2 --> Fase3: Transición (Δt2)
+    state "Fase 3: Skill de Cierre" as Fase3
+    note right of Fase3: Death Stab (43), Destruction (48), Blood Storm (232)
+    
+    Fase3 --> ComboBurst: ¡COMBO BURST!
+    note right of ComboBurst: Humano legal: Δt >= 650 ms<br/>Bot / Macro ilegal: Δt <= 160 ms
+    ComboBurst --> [*]
+```
 
 * **Skills Válidas Fase 1 (Arma):** Cyclone (`19`), Slash (`20`), Falling Slash (`21`), Lunge (`22`), Uppercut (`23`).
 * **Skills Válidas Fase 2:** Twisting Slash (`41`), Rageful Blow (`42`).
@@ -274,6 +272,30 @@ Cuando un jugador abre 4 o 5 ventanas de MU (`main.exe`) al mismo tiempo:
 * El servidor reutiliza los mismos Player IDs pequeños (`0` a `10000`) para cada cliente en mapas distintos.
 * **Solución de Sentinel:** Se crea una clave compuesta de aislamiento:
   $$\text{SessionKey} = \text{ClientPort} \mathbin{\Vert} \text{PlayerID} \quad (\text{ej: } ``58076\_1044'')$$
+
+```mermaid
+flowchart TD
+    subgraph MultiClient ["🖥️ Múltiples Clientes main.exe en tu PC"]
+        W1["Ventana 1 (Ktol)<br/>Puerto Local TCP 58076"]
+        W2["Ventana 2 (Fedor)<br/>Puerto Local TCP 58812"]
+        W3["Ventana 3 (Lyandrid)<br/>Puerto Local TCP 58177"]
+    end
+
+    subgraph NamespacingEngine ["🛡️ Sentinel Multi-Client Engine"]
+        KEY1["SessionKey: 58076_1044"]
+        KEY2["SessionKey: 58812_1044"]
+        KEY3["SessionKey: 58177_1044"]
+    end
+
+    W1 --> KEY1
+    W2 --> KEY2
+    W3 --> KEY3
+
+    KEY1 --> RADAR["🎯 Radar con Aislamiento Total<br/>(Cero colisiones entre mapas distintos)"]
+    KEY2 --> RADAR
+    KEY3 --> RADAR
+```
+
 De esta manera, las coordenadas de los personajes en una ventana de Lorencia no colisionan ni interfieren con los personajes de otra ventana en Devias.
 
 ---
