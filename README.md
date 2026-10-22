@@ -24,6 +24,7 @@ A diferencia de los anticheats tradicionales intrusivos, Sentinel opera **100% d
    - [¿Por qué los Magos y Dark Lords no dan falsas alertas?](#por-qué-los-magos-y-dark-lords-no-dan-falsas-alertas)
 2. [Explicación Técnica a Fondo (Motor, Protocolo y Matemáticas)](#-2-explicación-técnica-a-fondo-motor-protocolo-y-matemáticas)
    - [Arquitectura del Sniffer de Kernel](#arquitectura-del-sniffer-de-kernel)
+   - [Diccionario de Protocolo: Interpretación de Habilidades, Nombres y Movimiento](#-diccionario-de-protocolo-interpretación-de-habilidades-nombres-y-movimiento)
    - [Matemáticas del Speedhack de Movimiento](#matemáticas-del-speedhack-de-movimiento)
    - [Fisiología y Mecánica del Auto-Combo](#fisiología-y-mecánica-del-auto-combo)
    - [Auditoría de Consumo de Pociones (Opcode 0x26)](#auditoría-de-consumo-de-pociones-opcode-0x26)
@@ -100,6 +101,106 @@ Tarjeta de Red Física (Intel Ethernet I226-V / Wi-Fi 6E)
 
 1. **Auto-Detección de Adaptador Activo:** Consulta la tabla de conexiones de Windows (`netstat -ano`) y busca cuál es la IP local vinculada al GameServer (`143.14.179.89`), priorizando la interfaz física Ethernet por encima de interfaces virtuales (Hyper-V, VPNs).
 2. **Buffer Circular de Alto Rendimiento:** Se asigna un búfer de **10 MB** para no perder ni un solo paquete durante el asedio (Castle Siege) o eventos masivos.
+
+---
+
+### 📖 Diccionario de Protocolo: Interpretación de Habilidades, Nombres y Movimiento
+
+¿Cómo lee Sentinel las tramas en crudo que viajan por el cable de red? En MU Online Season 6, la comunicación cliente-servidor está estandarizada mediante paquetes de cabecera fija (`0xC1` o `0xC3` para paquetes de longitud $\le 255$ bytes, y `0xC2` o `0xC4` para paquetes extendidos).
+
+#### 1. Diccionario y Decodificación de Habilidades (`SkillId`)
+En el protocolo S6, cada ataque y hechizo se identifica mediante un número entero (`SkillId`). Sentinel intercepta tres familias de opcodes de combate:
+* **`0x19` (Magic/Skill Attack):** Utilizado para habilidades activadas con click derecho (Cyclone, Death Stab, Fireburst).
+* **`0x1E` (Duration Magic Hit):** Utilizado para habilidades con daño continuo en área (Twisting Slash, Evil Spirit).
+* **`0x11` (Attack Hit):** Utilizado para golpes físicos simples y resolución de impacto.
+
+##### Estructura de Bytes del Paquete de Skill (`0x19`):
+```text
+Offset  | Byte         | Descripción
+────────┼──────────────┼────────────────────────────────────────────────────
+pkt[0]  | 0xC1         | Cabecera de paquete estándar
+pkt[1]  | 0x09         | Longitud total de la trama (9 bytes)
+pkt[2]  | 0x19         | Opcode: Magic / Skill Attack
+pkt[3]  | [Skill_H]    | Byte alto del ID de la habilidad
+pkt[4]  | [Skill_L]    | Byte bajo del ID de la habilidad: ((pkt[3] & 0x7F) << 8) | pkt[4]
+pkt[5]  | [Target_H]   | Byte alto del Entity ID del objetivo / atacante
+pkt[6]  | [Target_L]   | Byte bajo del Entity ID del objetivo / atacante
+pkt[7]  | [MagicKey]   | Clave de validación de animación del cliente
+pkt[8]  | [Direction]  | Ángulo o dirección del ataque
+```
+
+##### Diccionario de Habilidades del Combo de Blade Knight:
+| Skill ID | Nombre de Habilidad | Fase del Combo | Rol en la Detección |
+| :---: | :--- | :--- | :--- |
+| **`19`** | **Cyclone** (Arma) | **Fase 1** (Apertura) | Skill de espadas/armas. Inicia la secuencia de combo. |
+| **`20`** | **Slash** (Arma) | **Fase 1** (Apertura) | Corte con arma básica. |
+| **`21`** | **Falling Slash** (Arma)| **Fase 1** (Apertura) | Salto y estocada descendente. |
+| **`22`** | **Lunge** (Arma) | **Fase 1** (Apertura) | Estocada frontal de lanzas o espadas. |
+| **`23`** | **Uppercut** (Arma) | **Fase 1** (Apertura) | Golpe ascendente con armas cortas. |
+| **`41`** | **Twisting Slash** | **Fase 2** (Transición)| Giro circular continuo. Frecuentemente usado como puente. |
+| **`42`** | **Rageful Blow** | **Fase 2** (Transición)| Golpe al suelo con onda sísmica. |
+| **`43`** | **Death Stab** | **Fase 3** (Cierre) | Estocada mortal de viento. Detona la explosión de combo. |
+| **`44`** | **Crescent Moon Slash** | **Fase 3** (Cierre) | Corte en media luna de eventos / asedio. |
+| **`48`** | **Strike of Destruction** | **Fase 3** (Cierre) | Espada gigante de fuego descendente. |
+| **`232`** | **Blood Storm** | **Fase 3** (Master) | Tormenta de sangre del árbol de habilidades maestro. |
+
+> [!NOTE]
+> **Filtro Anti-Spam:** Si un jugador utiliza la misma habilidad repetidas veces (por ejemplo `41 ➔ 41 ➔ 41` farmeando monstruos con Twisting Slash), Sentinel **no lo contabiliza como combo**, ya que el motor exige alternar entre al menos 2 fases distintas (`Fase 1 ➔ Fase 2 ➔ Fase 3`).
+
+---
+
+#### 2. Interpretación de Tramas de Movimiento y Coordenadas
+El movimiento se transmite mediante los opcodes **`0xD9`**, **`0x15`**, **`0xD6`** y **`0xD4`** (según el tipo de desplazamiento: caminar, correr o sincronización del viewport):
+
+##### Estructura de Bytes del Paquete de Movimiento (`0xD4` / `0x15`):
+```text
+Offset  | Byte         | Interpretación
+────────┼──────────────┼────────────────────────────────────────────────────
+pkt[0]  | 0xC1         | Cabecera estándar
+pkt[1]  | 0x07 o 0x08  | Longitud del paquete
+pkt[2]  | 0xD4 / 0x15  | Opcode de Movimiento
+pkt[3]  | [ID_H]       | ((pkt[3] & 0x7F) << 8) -> Máscara de bit alto de entidad
+pkt[4]  | [ID_L]       | ID efímero del jugador asignado por el servidor
+pkt[5]  | [Pos_X]      | Coordenada X actual en el mapa (0 a 255)
+pkt[6]  | [Pos_Y]      | Coordenada Y actual en el mapa (0 a 255)
+pkt[7]  | [Dir / Step] | Dirección cardinal (0 a 7: N, NE, E, SE, S, SW, W, NW)
+```
+
+##### Decodificación del Entity ID (`PlayerID`):
+En el motor S6, el bit más significativo (`0x80`) se utiliza para distinguir si la entidad es un monstruo/NPC o un personaje jugador:
+$$\text{pId} = ((pkt[3] \ \& \ 0\text{x}7\text{F}) \ll 8) \mid pkt[4]$$
+Las coordenadas `pkt[5]` ($X$) y `pkt[6]` ($Y$) son valores enteros que representan la casilla física exacta de la grilla del mapa (por ejemplo Lorencia tiene una dimensión de $256 \times 256$ casillas).
+
+---
+
+#### 3. Identificación y Extracción de Nombres de Personajes
+En Season 6, el protocolo no envía un encabezado JSON ni etiquetas de texto; los nombres viajan como **bloques de memoria ASCII fijos de 10 bytes** (rellenos con bytes nulos `0x00` si el nombre tiene menos de 10 letras).
+
+Sentinel implementa un pipeline de cuatro pasos para descubrir y validar a quién pertenece cada paquete:
+
+```
+[ Paquete TCP entrante ]
+         │
+         ▼
+[ 1. Escáner de Cadenas ASCII ] ────► Extrae secuencias alfanuméricas [A-Za-z0-9_] (4-10 bytes)
+         │
+         ▼
+[ 2. Filtro de Palabras Reservadas ] ─► Descarta palabras del juego (MASTER, BLADE, LEVEL, GUILD...)
+         │
+         ▼
+[ 3. Enlace de Sesión (SessionKey) ] ─► Asocia el nombre a la clave única: `${clientPort}_${pId}`
+         │
+         ▼
+[ 4. Validación API Smash MU ] ──────► Consulta oficial a https://www.smashmu.com/api/
+                                       Obtiene: Clase real, Nivel, Resets y GearScore oficial
+```
+
+1. **Escaneo de Patrones ASCII:** Detecta secuencias continuas de bytes legibles (código ASCII 48 al 57 para números, 65 al 90 para mayúsculas, 97 al 122 para minúsculas).
+2. **Lista de Palabras Reservadas (`RESERVED`):** Evita que palabras comunes del protocolo (como `MASTER`, `BLADE`, `KNIGHT`, `SERVER`, `LEVEL`, `RESET`) sean confundidas con nombres de jugadores.
+3. **Asignación a la Ventana Local:** Si el nombre coincide con un personaje tuyo (`WHITELIST`), la ventana local se auto-etiqueta inmediatamente con su nombre correspondiente (`Ktol`, `Fedor`, `Lyandrid`).
+4. **Verificación en Base de Datos Oficial:** Realiza una petición `GET` asíncrona a la API web de Smash MU (`/api/profile/{name}`). Si el personaje existe, se descarga su clase oficial y se bloquea cualquier intento de falso positivo en el radar.
+
+---
 
 ---
 
