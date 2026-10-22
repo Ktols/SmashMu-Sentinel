@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Smash MU Sentinel & Forensics Station</title>
+  <link rel="stylesheet" href="styles.css?v=4">
+</head>
+<body>
+
+  <!-- HEADER -->
+  <header>
+    <div class="logo-area">
+      <div class="shield-icon">🛡️</div>
+      <div class="logo-title">
+        <h1>SMASH MU SENTINEL</h1>
+        <p>Estación Forense Anti-Cheat · Velocidad Física, Auto-Combo & Tele-Kill</p>
+      </div>
+    </div>
+
+    <div class="header-actions">
+      <div class="badge-live" title="Estado de captura de red">
+        <span class="dot" id="pulse-dot"></span>
+        <span id="connection-status">MONITOR ACTIVO</span>
+        <span id="packet-counter" style="margin-left: 0.35rem; font-family: monospace; color: #38bdf8; background: rgba(56,189,248,0.15); padding: 0.1rem 0.4rem; border-radius: 4px; font-weight: 800;">0 pkts</span>
+      </div>
+
+      <button id="btn-sound" class="btn active" title="Silenciar / Activar Alarma Sonora">
+        🔊 Alarma Sonora: ON
+      </button>
+
+      <button id="btn-simulation" class="btn" title="Alternar simulación de prueba">
+        🎮 Simulación: APAGADA
+      </button>
+
+      <button id="btn-clear" class="btn danger" title="Limpiar historial">
+        🗑️ Limpiar
+      </button>
+    </div>
+  </header>
+
+  <!-- MAIN -->
+  <main>
+    <!-- TABS NAVIGATION -->
+    <nav class="tabs-nav">
+      <button class="tab-btn active" data-tab="tab-pvp">
+        🎯 Radar PvP en Vivo (Velocidad & Combos)
+      </button>
+      <button class="tab-btn" data-tab="tab-invasions">
+        🗺️ Cazador de Invasiones (Tele-Kill)
+      </button>
+      <button class="tab-btn" data-tab="tab-inspector">
+        🔍 Inspector de Perfiles & Gear
+      </button>
+      <button class="tab-btn" data-tab="tab-blacklist">
+        ☠️ Lista Negra de Hackers (Histórico)
+      </button>
+      <button class="tab-btn" data-tab="tab-reports">
+        📋 Generador de Tickets GM
+      </button>
+    </nav>
+
+    <!-- TAB 1: RADAR PVP EN VIVO -->
+    <section id="tab-pvp" class="tab-content active">
+
+      <!-- Selector de Ventanas / Multi-Cliente -->
+      <div class="windows-container" id="windows-container">
+        <div class="windows-header">
+          <div class="windows-title">
+            <span>🪟 Clientes de MU Detectados:</span>
+            <span id="windows-count" class="badge clean" style="font-size: 0.7rem;">Buscando ventanas...</span>
+          </div>
+          <span style="font-size: 0.75rem; color: #94a3b8;">
+            Selecciona la ventana que estás usando para aislar su radar y evitar cruces de datos
+          </span>
+        </div>
+        <div id="windows-pills" class="windows-pills">
+          <button class="win-pill active" data-port="ALL" onclick="selectWindow('ALL')">🌐 Todas las Ventanas</button>
+        </div>
+      </div>
+
+      <div class="radar-grid">
+        
+        <!-- Tabla de Jugadores en Rango -->
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">
+              <span>👥 Jugadores en Rango de Pantalla</span>
+            </div>
+            <span id="players-count" class="badge clean">3 Jugadores</span>
+          </div>
+
+          <div class="table-container">
+            <table>
+              <thead>
+                <tr>
+                  <th>Personaje / Perfil</th>
+                  <th>Ventana de MU</th>
+                  <th>Coord</th>
+                  <th>Velocidad (Física)</th>
+                  <th>Cadencia Combo</th>
+                  <th>Auto-Pot</th>
+                  <th>Dictamen</th>
+                </tr>
+              </thead>
+              <tbody id="players-tbody">
+                <!-- Se llena dinámicamente -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Feed de Alertas en Tiempo Real -->
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">
+              <span>🚨 Registro de Infracciones & Histórico</span>
+            </div>
+            <span id="alerts-count" class="badge critical">0 Alertas</span>
+          </div>
+
+          <div style="margin-bottom: 0.75rem;">
+            <input type="text" id="alerts-search-input" class="search-input" placeholder="🔍 Buscar por nombre en el historial (ej: DaiKambe, KINGwk)..." oninput="onSearchAlerts(this.value)" style="padding: 0.45rem 0.8rem; font-size: 0.8rem; width: 100%; border-radius: 6px; box-sizing: border-box;" />
+          </div>
+
+          <div id="alerts-feed" class="alert-feed">
+            <div style="text-align: center; color: #64748b; padding: 2rem; font-size: 0.85rem;">
+              Escuchando paquetes y analizando cadencia física...
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- TAB 2: INVASIONES & TELE-KILL -->
+    <section id="tab-invasions" class="tab-content">
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">
+            <span>🗺️ Radar de Warps Imposibles en Invasiones (Smash MU Live API)</span>
+          </div>
+          <span class="badge clean">Sondeando cada 3.5s</span>
+        </div>
+        <p style="color: #94a3b8; font-size: 0.85rem; margin-bottom: 1rem;">
+          Detecta automáticamente cuando un jugador elimina múltiples jefes o dorados en mapas distantes en un intervalo menor a 25 segundos (físicamente imposible sin Speedhack o teletransporte).
+        </p>
+
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>Hora</th>
+                <th>Jugador</th>
+                <th>Hermandad</th>
+                <th>Primer Jefe</th>
+                <th>Segundo Jefe</th>
+                <th>Tiempo Transcurrido (Δt)</th>
+                <th>Severidad</th>
+              </tr>
+            </thead>
+            <tbody id="telekills-tbody">
+              <tr>
+                <td colspan="7" style="text-align: center; color: #64748b; padding: 2rem;">
+                  Esperando registros de la siguiente ventana de invasión...
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 3: INSPECTOR DE PERFILES -->
+    <section id="tab-inspector" class="tab-content">
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">
+            <span>🔍 Auditoría Forense de Jugador (API Oficial Smash MU)</span>
+          </div>
+        </div>
+
+        <div class="search-bar">
+          <input type="text" id="inspect-input" class="search-input" placeholder="Escribe el nombre exacto del personaje sospechoso (ej: Mar1F1)...">
+          <button id="btn-inspect" class="btn active">Auditar Perfil</button>
+        </div>
+
+        <div id="inspect-result" style="display: none;">
+          <div class="inspect-profile">
+            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #1e293b; padding-bottom: 0.75rem;">
+              <div>
+                <h2 id="char-name" style="font-size: 1.25rem; font-weight: 800; color: #38bdf8;">-</h2>
+                <p id="char-sub" style="font-size: 0.8rem; color: #94a3b8;">-</p>
+              </div>
+              <a id="char-link" href="#" target="_blank" class="btn">Abrir en SmashMU.com ↗</a>
+            </div>
+
+            <div class="profile-grid">
+              <div class="stat-box">
+                <div class="stat-label">GearScore Oficial</div>
+                <div id="stat-gs" class="stat-value">-</div>
+              </div>
+              <div class="stat-box">
+                <div class="stat-label">Piezas con DDI (Damage Dec. 7%)</div>
+                <div id="stat-ddi" class="stat-value">-</div>
+              </div>
+              <div class="stat-box">
+                <div class="stat-label">Opción SD Ratio (8%)</div>
+                <div id="stat-sd" class="stat-value">-</div>
+              </div>
+              <div class="stat-box">
+                <div class="stat-label">Veredicto de Resistencia en PvP</div>
+                <div id="stat-verdict" class="stat-value" style="font-size: 0.95rem;">-</div>
+              </div>
+            </div>
+
+            <div style="margin-top: 1rem; background-color: #0b0f19; padding: 1rem; border-radius: 6px; font-size: 0.85rem; border-left: 3px solid #06b6d4;">
+              <strong>Dictamen Forense:</strong>
+              <p id="stat-explanation" style="color: #cbd5e1; margin-top: 0.35rem; line-height: 1.4;">-</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 4: LISTA NEGRA / HISTÓRICO DE HACKERS -->
+    <section id="tab-blacklist" class="tab-content">
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">
+            <span>☠️ Archivo Histórico de Hackers Confirmados (Lista Negra)</span>
+          </div>
+          <span id="hackers-count-badge" class="badge critical">0 Infractores</span>
+        </div>
+        <p style="color: #94a3b8; font-size: 0.85rem; margin-bottom: 1rem;">
+          Registro acumulativo permanente de todos los jugadores que han cometido infracciones sobrehumanas de Auto-Combo, Speedhack o Auto-Pot en tu presencia. Cada registro almacena su peor medición, frecuencia y enlace a su perfil web oficial.
+        </p>
+
+        <div style="display: flex; gap: 0.5rem; margin-bottom: 1.25rem;">
+          <input type="text" id="blacklist-search" class="search-input" placeholder="🔍 Filtrar lista negra por nombre o clase (ej: DaiKambe, KINGwk)..." oninput="filterBlacklist(this.value)" />
+          <button class="btn" onclick="exportBlacklist()" style="background: #1e293b; border: 1px solid #334155; white-space: nowrap;">💾 Descargar Archivo JSON</button>
+        </div>
+
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>Infractor</th>
+                <th>Clase Oficial</th>
+                <th>Infracción Principal</th>
+                <th>Peor Medición (Pico)</th>
+                <th>Reincidencias</th>
+                <th>Última Captura</th>
+                <th>Acción Rápida</th>
+              </tr>
+            </thead>
+            <tbody id="blacklist-tbody">
+              <tr>
+                <td colspan="7" style="text-align: center; color: #64748b; padding: 2rem;">Cargando lista negra histórica...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 5: REPORTES PARA DISCORD -->
+    <section id="tab-reports" class="tab-content">
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">
+            <span>📋 Generador de Evidencia para Tickets de Soporte (Staff Smash MU)</span>
+          </div>
+          <button id="btn-copy-report" class="btn active">📋 Copiar Reporte al Portapapeles</button>
+        </div>
+        <p style="color: #94a3b8; font-size: 0.85rem; margin-bottom: 1rem;">
+          Este formato incluye mediciones técnicas, milisegundos de cadencia de combo, casillas de velocidad física y enlaces al perfil oficial para que el Staff no pueda desestimar la denuncia.
+        </p>
+
+        <div id="report-text" class="report-area">Generando reporte automático...</div>
+      </div>
+    </section>
+  </main>
+
+  <script src="app.js?v=7"></script>
+</body>
+</html>

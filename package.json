@@ -1,0 +1,25 @@
+{
+  "name": "smashmu-sentinel",
+  "version": "1.0.0",
+  "description": "Smash MU Anti-Cheat Sentinel & Forensic Radar (PvP Speed, Auto-Combo & Tele-Kill Hunter)",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "dependencies": {
+    "cap": "^0.2.1",
+    "express": "^4.21.1",
+    "ws": "^8.18.0"
+  },
+  "keywords": [
+    "anticheat",
+    "mu-online",
+    "smash-mu",
+    "radar",
+    "forensics"
+  ],
+  "author": "TEMPLARS Dev Team",
+  "license": "MIT"
+}
