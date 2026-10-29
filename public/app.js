@@ -436,15 +436,22 @@ function renderAlertsList() {
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.35rem;">
           <div>
             <strong>Jugador:</strong> 
-            <a href="${profileUrl}" target="_blank" style="color: #38bdf8; text-decoration: underline; font-weight: 700;">
-              ${a.playerName} ↗
-            </a>
+            ${!a.playerName.startsWith('Jugador_') ? `
+              <a href="${profileUrl}" target="_blank" style="color: #38bdf8; text-decoration: underline; font-weight: 700;">
+                ${a.playerName} ↗
+              </a>
+            ` : `
+              <span style="color: #cbd5e1; font-weight: 700;">${a.playerName}</span>
+              <span style="font-size: 0.72rem; color: #94a3b8; background: #334155; padding: 0.1rem 0.4rem; border-radius: 4px; margin-left: 0.3rem;">ID en telemetría</span>
+            `}
             <span style="color: #94a3b8;">· Registro:</span> <span class="alert-metric">${a.metric}</span>
             <span style="font-size: 0.7rem; color: #64748b;">(Legal: ${a.limit})</span>
           </div>
-          <a href="${profileUrl}" target="_blank" class="btn" style="padding: 0.2rem 0.5rem; font-size: 0.7rem;">
-            Ver Perfil ↗
-          </a>
+          ${!a.playerName.startsWith('Jugador_') ? `
+            <a href="${profileUrl}" target="_blank" class="btn" style="padding: 0.2rem 0.5rem; font-size: 0.7rem;">
+              Ver Perfil ↗
+            </a>
+          ` : ''}
         </div>
         <div class="alert-details">${a.details}</div>
         ${a.forensics ? `
