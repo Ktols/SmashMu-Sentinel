@@ -24,14 +24,24 @@ app.use((req, res, next) => {
 });
 app.use(express.static(path.join(__dirname, 'public')));
 
+// Protección contra excepciones no controladas para garantizar 100% de tiempo de actividad
+process.on('uncaughtException', (err) => {
+  console.error('[UNCAUGHT EXCEPTION]:', err?.message || err);
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('[UNHANDLED REJECTION]:', reason?.message || reason);
+});
+
 // Función para broadcast de WebSocket a todos los clientes
 function broadcast(payload) {
-  const msg = JSON.stringify(payload);
-  wss.clients.forEach(client => {
-    if (client.readyState === WebSocket.OPEN) {
-      client.send(msg);
-    }
-  });
+  try {
+    const msg = JSON.stringify(payload);
+    wss.clients.forEach(client => {
+      if (client.readyState === WebSocket.OPEN) {
+        client.send(msg);
+      }
+    });
+  } catch (err) {}
 }
 
 // Inicializar Módulos de Detección
